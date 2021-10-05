@@ -49,11 +49,30 @@ vows.describe('Hashres Utils').addBatch({
       }
     }
   },
+  'quoteReplacementString works with replace': {
+    topic: utils,
+    'when there\'s nothing to quote': function (utils) {
+      const str = 'ccc';
+      assert.equal(str, 'abb'.replace(/a(.+)/, utils.quoteReplacementString(str)));
+    },
+    'when replacement contains $': function (utils) {
+      const str = 'c$c';
+      assert.equal(str, 'abb'.replace(/a(.+)/, utils.quoteReplacementString(str)));
+    },
+    'when replacement contains $1': function (utils) {
+      const str = 'c$1c';
+      assert.equal(str, 'abb'.replace(/a(.+)/, utils.quoteReplacementString(str)));
+    },
+    'when replacement is used as part of larger string': function (utils) {
+      const str = 'c$1c';
+      assert.equal('c$1cbb', 'abb'.replace(/a(.+)/, utils.quoteReplacementString(str) + '$1'));
+    },
+  },
   'generates md5 for': {
     topic: utils,
     './fixtures/knownMd5.js': function(utils) {
       assert.equal(
-        utils.md5('./test/fixtures/knownMd5.js'),
+        utils.md5File('./test/fixtures/knownMd5.js'),
         'd845a23e205d256a5bcfffbecb4b7c35');
     }
   }
