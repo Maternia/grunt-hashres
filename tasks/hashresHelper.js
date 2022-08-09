@@ -89,41 +89,50 @@ exports.hashAndSub = function(grunt, options) {
       const dag = utils.mergeGraphCycles(fileDependencyGraph);
       const dagNodeHashesMap = {};
 
+      const prepareDependencyRenamedMap = function (dependencyBasenames, hash) {
+        const dependencyRenamedMap = {};
+
+        for (const dependencyBasename of dependencyBasenames) {
+          const lastIndex = dependencyBasename.lastIndexOf('.');
+          dependencyRenamedMap[dependencyBasename] = formatter({
+            hash: hash,
+            name: dependencyBasename.slice(0, lastIndex),
+            ext : dependencyBasename.slice(lastIndex + 1, dependencyBasename.length)
+          });
+        }
+
+        return dependencyRenamedMap;
+      };
+      const hashDependencies = function (destRealpath, depedencyBasenames, dependencyRenamedMap) {
+        let destContents = fs.readFileSync(destRealpath, encoding);
+
+        for (const dependencyBasename of depedencyBasenames) {
+          const renamed = dependencyRenamedMap[dependencyBasename];
+          grunt.log.debug('Substituting ' + dependencyBasename + ' by ' + renamed);
+          destContents = destContents.replace(
+            new RegExp(wrapFilenameRegexStr(utils.preg_quote(dependencyBasename)+"(\\?[0-9a-z]+)?"), "g"),
+            '$1' + utils.quoteReplacementString(renamed) + '$3'
+          );
+
+          grunt.log.debug('Substituting ' + nameToNameSearch[dependencyBasename] + ' by ' + renamed);
+          destContents = destContents.replace(
+            new RegExp(wrapFilenameRegexStr(nameToNameSearch[dependencyBasename]), "g"),
+            '$1' + utils.quoteReplacementString(renamed) + '$2'
+          );
+        }
+        fs.writeFileSync(destRealpath, destContents, encoding);
+      };
+
       // Each dagNodeId has one or more basenames associated with it in dag.
       // Each basename has one or more realpaths associated with it in fileDependencyGraph.
       // Dependencies are hashed before the files that depend on them.
       for (const dagNodeId of graphlib.alg.topsort(dag).reverse()) {
         for (const dependencyDagNodeId of dag.successors(dagNodeId)) {
-          const dependencyRenamedMap = {};
-
-          for (const dependencyBasename of dag.node(dependencyDagNodeId)) {
-            const lastIndex = dependencyBasename.lastIndexOf('.');
-            dependencyRenamedMap[dependencyBasename] = formatter({
-              hash: dagNodeHashesMap[dependencyDagNodeId],
-              name: dependencyBasename.slice(0, lastIndex),
-              ext : dependencyBasename.slice(lastIndex + 1, dependencyBasename.length)
-            });
-          }
+          const dependencyRenamedMap = prepareDependencyRenamedMap(dag.node(dependencyDagNodeId), dagNodeHashesMap[dependencyDagNodeId]);
 
           for (const destBasename of dag.node(dagNodeId)) {
             for (const destRealpath of fileDependencyGraph.node(destBasename)) {
-              let destContents = fs.readFileSync(destRealpath, encoding);
-
-              for (const dependencyBasename of dag.node(dependencyDagNodeId)) {
-                const renamed = dependencyRenamedMap[dependencyBasename];
-                grunt.log.debug('Substituting ' + dependencyBasename + ' by ' + renamed);
-                destContents = destContents.replace(
-                  new RegExp(wrapFilenameRegexStr(utils.preg_quote(dependencyBasename)+"(\\?[0-9a-z]+)?"), "g"),
-                  '$1' + utils.quoteReplacementString(renamed) + '$3'
-                );
-
-                grunt.log.debug('Substituting ' + nameToNameSearch[dependencyBasename] + ' by ' + renamed);
-                destContents = destContents.replace(
-                  new RegExp(wrapFilenameRegexStr(nameToNameSearch[dependencyBasename]), "g"),
-                  '$1' + utils.quoteReplacementString(renamed) + '$2'
-                );
-              }
-              fs.writeFileSync(destRealpath, destContents, encoding);
+              hashDependencies(destRealpath, dag.node(dependencyDagNodeId), dependencyRenamedMap);
             }
           }
         }
@@ -142,43 +151,11 @@ exports.hashAndSub = function(grunt, options) {
           (subhashes.length === 1 ? subhashes[0] : utils.md5String(subhashes.join(''))).slice(0, 8);
 
         for (const destBasename of dag.node(dagNodeId)) {
-          const dependencyRenamedMap = {};
-
-          for (const dependencyBasename of dag.node(dagNodeId)) {
-            if (dependencyBasename === destBasename) {
-              continue;
-            }
-
-            const lastIndex = dependencyBasename.lastIndexOf('.');
-            dependencyRenamedMap[dependencyBasename] = formatter({
-              hash: md5,
-              name: dependencyBasename.slice(0, lastIndex),
-              ext : dependencyBasename.slice(lastIndex + 1, dependencyBasename.length)
-            });
-          }
+          const dependencyBasenames = dag.node(dagNodeId).filter((b) => b !== destBasename);
+          const dependencyRenamedMap = prepareDependencyRenamedMap(dependencyBasenames, md5);
 
           for (const destRealpath of fileDependencyGraph.node(destBasename)) {
-            let destContents = fs.readFileSync(destRealpath, encoding);
-
-            for (const dependencyBasename of dag.node(dagNodeId)) {
-              if (dependencyBasename === destBasename) {
-                continue;
-              }
-
-              const renamed = dependencyRenamedMap[dependencyBasename];
-              grunt.log.debug('Substituting ' + dependencyBasename + ' by ' + renamed);
-              destContents = destContents.replace(
-                new RegExp(wrapFilenameRegexStr(utils.preg_quote(dependencyBasename)+"(\\?[0-9a-z]+)?"), "g"),
-                '$1' + utils.quoteReplacementString(renamed) + '$3'
-              );
-
-              grunt.log.debug('Substituting ' + nameToNameSearch[dependencyBasename] + ' by ' + renamed);
-              destContents = destContents.replace(
-                new RegExp(wrapFilenameRegexStr(nameToNameSearch[dependencyBasename]), "g"),
-                '$1' + utils.quoteReplacementString(renamed) + '$2'
-              );
-            }
-            fs.writeFileSync(destRealpath, destContents, encoding);
+            hashDependencies(destRealpath, dependencyBasenames, dependencyRenamedMap);
           }
         }
 
