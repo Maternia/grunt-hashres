@@ -141,6 +141,47 @@ exports.hashAndSub = function(grunt, options) {
         const md5 = dagNodeHashesMap[dagNodeId] =
           (subhashes.length === 1 ? subhashes[0] : utils.md5String(subhashes.join(''))).slice(0, 8);
 
+        for (const destBasename of dag.node(dagNodeId)) {
+          const dependencyRenamedMap = {};
+
+          for (const dependencyBasename of dag.node(dagNodeId)) {
+            if (dependencyBasename === destBasename) {
+              continue;
+            }
+
+            const lastIndex = dependencyBasename.lastIndexOf('.');
+            dependencyRenamedMap[dependencyBasename] = formatter({
+              hash: md5,
+              name: dependencyBasename.slice(0, lastIndex),
+              ext : dependencyBasename.slice(lastIndex + 1, dependencyBasename.length)
+            });
+          }
+
+          for (const destRealpath of fileDependencyGraph.node(destBasename)) {
+            let destContents = fs.readFileSync(destRealpath, encoding);
+
+            for (const dependencyBasename of dag.node(dagNodeId)) {
+              if (dependencyBasename === destBasename) {
+                continue;
+              }
+
+              const renamed = dependencyRenamedMap[dependencyBasename];
+              grunt.log.debug('Substituting ' + dependencyBasename + ' by ' + renamed);
+              destContents = destContents.replace(
+                new RegExp(wrapFilenameRegexStr(utils.preg_quote(dependencyBasename)+"(\\?[0-9a-z]+)?"), "g"),
+                '$1' + utils.quoteReplacementString(renamed) + '$3'
+              );
+
+              grunt.log.debug('Substituting ' + nameToNameSearch[dependencyBasename] + ' by ' + renamed);
+              destContents = destContents.replace(
+                new RegExp(wrapFilenameRegexStr(nameToNameSearch[dependencyBasename]), "g"),
+                '$1' + utils.quoteReplacementString(renamed) + '$2'
+              );
+            }
+            fs.writeFileSync(destRealpath, destContents, encoding);
+          }
+        }
+
         for (const basename of dag.node(dagNodeId)) {
           const lastIndex = basename.lastIndexOf('.'),
             renamed = formatter({

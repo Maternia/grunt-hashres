@@ -92,8 +92,7 @@ vows.describe('hashresHelper').addBatch({
     'with recursive imports': {
       topic (grunt) {
         resetDirectoryFromSource('./temp/helper/recursive/', './temp/helper/recursive-temp');
-
-        const runHashAndSubAndResetDir = function () {
+        const runHashAndSub = function() {
           helper.hashAndSub(
             grunt, {
               files: [{
@@ -105,14 +104,20 @@ vows.describe('hashresHelper').addBatch({
               renameFiles   : true,
             });
 
-          const result = getSourceNameToHashMap(grunt.file.expand('./temp/helper/recursive-temp/*.js'), './temp/helper/recursive-temp');
+          return getSourceNameToHashMap(grunt.file.expand('./temp/helper/recursive-temp/*.js'), './temp/helper/recursive-temp');
+        };
+        const resetDir = function () {
           resetDirectoryFromSource('./temp/helper/recursive/', './temp/helper/recursive-temp');
+        };
+        const runHashAndSubAndResetDir = function () {
+          const result = runHashAndSub();
+          resetDir();
 
           return result;
         };
 
         const origHashes = runHashAndSubAndResetDir();
-        this.callback(runHashAndSubAndResetDir, origHashes);
+        this.callback(runHashAndSubAndResetDir, origHashes, runHashAndSub, resetDir);
       },
       'when root file changes': function (runHashAndSubAndResetDir, origHashes) {
         changeJsFile('./temp/helper/recursive-temp/first.js');
@@ -125,9 +130,21 @@ vows.describe('hashresHelper').addBatch({
         assert(origHashes['third.js'] === firstFileChangedHashes['third.js']);
         assert(origHashes['singleton.js'] === firstFileChangedHashes['singleton.js']);
       },
-      'when middle file changes (cycle)': function (runHashAndSubAndResetDir, origHashes) {
+      'when middle file changes (cycle)': function (runHashAndSubAndResetDir, origHashes, runHashAndSub, resetDir) {
         changeJsFile('./temp/helper/recursive-temp/second.js');
-        const secondFileChangedHashes = runHashAndSubAndResetDir();
+        const secondFileChangedHashes = runHashAndSub();
+
+        // Check that the cyclic imports are also hashed
+        const secondScripts = [
+          fs.readFileSync(grunt.file.expand('./temp/helper/recursive-temp/*second.js')[0], 'utf8'),
+          fs.readFileSync(grunt.file.expand('./temp/helper/recursive-temp/*second2.js')[0], 'utf8'),
+          fs.readFileSync(grunt.file.expand('./temp/helper/recursive-temp/*second3.js')[0], 'utf8'),
+        ];
+        resetDir();
+
+        for (const contents of secondScripts) {
+          assert(contents.indexOf('9fbbf81d-second') !== -1);
+        }
 
         assert(origHashes['first.js'] !== secondFileChangedHashes['first.js']);
         assert(origHashes['second.js'] !== secondFileChangedHashes['second.js']);
